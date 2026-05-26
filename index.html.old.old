@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>Relay Tetris</title>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@400;600;700&display=swap');
+
+:root{
+  --bg:#07090d;
+  --panel:#10141c;
+  --line:#1e2635;
+  --cyan:#00ffe1;
+  --pink:#ff2d6b;
+  --text:#edf2ff;
+}
+
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Share Tech Mono', monospace;
+  overflow:hidden;
+  height:100dvh;
+  display:flex;
+  justify-content:center;
+}
+
+#app{
+  width:100%;
+  max-width:420px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:12px;
+  gap:10px;
+}
+
+.card{
+  width:100%;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:18px;
+}
+
+.logo{
+  font-family:'Teko',sans-serif;
+  font-size:58px;
+  line-height:1;
+  letter-spacing:3px;
+  color:var(--cyan);
+}
+
+.sub{
+  opacity:.6;
+  margin-top:4px;
+  font-size:12px;
+}
+
+button,input{
+  width:100%;
+  border:none;
+  outline:none;
+  border-radius:12px;
+  font-family:inherit;
+}
+
+button{
+  padding:14px;
+  font-size:15px;
+  cursor:pointer;
+  margin-top:10px;
+}
+
+.primary{
+  background:var(--cyan);
+  color:#000;
+  font-weight:bold;
+}
+
+.secondary{
+  background:transparent;
+  color:var(--pink);
+  border:1px solid var(--pink);
+}
+
+input{
+  background:#090c11;
+  border:1px solid var(--line);
+  color:white;
+  text-align:center;
+  padding:14px;
+  letter-spacing:6px;
+  text-transform:uppercase;
+  font-size:24px;
+}
+
+#lobby,#game{
+  width:100%;
+}
+
+#game{
+  display:none;
+  flex-direction:column;
+  gap:10px;
+}
+
+.top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+}
+
+.big{
+  font-size:32px;
+  font-family:'Teko',sans-serif;
+}
+
+.small{
+  font-size:11px;
+  opacity:.7;
+}
+
+#timer.danger{
+  color:var(--pink);
+}
+
+.center{
+  text-align:center;
+}
+
+canvas{
+  image-rendering:pixelated;
+  border-radius:8px;
+}
+
+#board{
+  border:2px solid var(--cyan);
+}
+
+.row{
+  display:flex;
+  gap:10px;
+  justify-content:center;
+  align-items:flex-start;
+}
+
+.side{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:center;
+}
+
+#turn{
+  padding:8px 12px;
+  border-radius:10px;
+  font-size:12px;
+  border:1px solid var(--cyan);
+  color:var(--cyan);
+}
+
+.controls{
+  width:100%;
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:8px;
+}
+
+.ctrl{
+  background:var(--panel);
+  border:1px solid var(--line);
+  color:white;
+  font-size:24px;
+  padding:16px;
+  border-radius:12px;
+  user-select:none;
+}
+
+.drop{
+  grid-column:1/-1;
+  color:var(--cyan);
+}
+</style>
+</head>
+
+<body>
+
+<div id="app">
+
+<div id="lobby">
+
+  <div class="card">
+    <div class="logo">RELAY TETRIS</div>
+    <div class="sub">shared board · alternating turns</div>
+  </div>
+
+  <div class="card">
+    <button class="primary" onclick="createRoom()">CREATE ROOM</button>
+  </div>
+
+  <div class="card">
+    <input id="roomInput" maxlength="4" placeholder="CODE"
+      oninput="this.value=this.value.toUpperCase()"/>
+    <button class="secondary" onclick="joinRoom()">JOIN ROOM</button>
+  </div>
+
+</div>
+
+<div id="game">
+
+  <div class="top">
+    <div>
+      <div class="small">SCORE</div>
+      <div class="big" id="score">0</div>
+    </div>
+
+    <div class="center">
+      <div class="small">TURN TIMER</div>
+      <div class="big" id="timer">60</div>
+    </div>
+
+    <div class="center">
+      <div class="small">ROOM</div>
+      <div class="big" id="roomCode">----</div>
+    </div>
+  </div>
+
+  <div class="row">
+
+    <canvas id="board"></canvas>
+
+    <div class="side">
+      <div class="small">NEXT</div>
+      <canvas id="next"></canvas>
+
+      <div id="turn">WAITING</div>
+    </div>
+
+  </div>
+
+  <div class="controls">
+    <div class="ctrl" ontouchstart="press('left')">◀</div>
+    <div class="ctrl" ontouchstart="press('rotate')">↻</div>
+    <div class="ctrl" ontouchstart="press('right')">▶</div>
+    <div class="ctrl" ontouchstart="press('down')">▼</div>
+    <div class="ctrl drop" ontouchstart="press('drop')">HARD DROP</div>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+const PORT = 3000;
+let ws;
+let playerIndex = 0;
+let currentActive = 0;
+
+const COLS = 10;
+const ROWS = 20;
+
+const COLORS = {
+  I:"#00ffe1",
+  O:"#ffe100",
+  T:"#b300ff",
+  S:"#00ff84",
+  Z:"#ff2d6b",
+  J:"#2d7cff",
+  L:"#ff8c00"
+};
+
+const PIECES = {
+  I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+  O:[[1,1],[1,1]],
+  T:[[0,1,0],[1,1,1],[0,0,0]],
+  S:[[0,1,1],[1,1,0],[0,0,0]],
+  Z:[[1,1,0],[0,1,1],[0,0,0]],
+  J:[[1,0,0],[1,1,1],[0,0,0]],
+  L:[[0,0,1],[1,1,1],[0,0,0]]
+};
+
+const KEYS = Object.keys(PIECES);
+
+let CELL = 16;
+let board = [];
+let piece = null;
+let nextPiece = null;
+let score = 0;
+
+let boardCanvas = document.getElementById("board");
+let nextCanvas = document.getElementById("next");
+
+let ctx = boardCanvas.getContext("2d");
+let nextCtx = nextCanvas.getContext("2d");
+
+let gameLoop;
+let timerLoop;
+
+let active = false;
+
+function resize(){
+  const width = Math.min(window.innerWidth - 100, 250);
+  CELL = Math.floor(width / COLS);
+
+  boardCanvas.width = CELL * COLS;
+  boardCanvas.height = CELL * ROWS;
+
+  nextCanvas.width = CELL * 4;
+  nextCanvas.height = CELL * 4;
+}
+resize();
+
+function newBoard(){
+  return Array.from({length:ROWS},()=>Array(COLS).fill(0));
+}
+
+function randomPiece(){
+  const type = KEYS[Math.floor(Math.random()*KEYS.length)];
+
+  return {
+    type,
+    shape: PIECES[type].map(r=>[...r]),
+    color: COLORS[type],
+    x: 3,
+    y: 0
+  };
+}
+
+function rotate(shape){
+  return shape[0].map((_,i)=>shape.map(r=>r[i]).reverse());
+}
+
+function valid(shape,x,y){
+  for(let r=0;r<shape.length;r++){
+    for(let c=0;c<shape[r].length;c++){
+      if(shape[r][c]){
+        let nx = x+c;
+        let ny = y+r;
+
+        if(nx<0 || nx>=COLS || ny>=ROWS) return false;
+        if(ny>=0 && board[ny][nx]) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function merge(){
+  piece.shape.forEach((row,r)=>{
+    row.forEach((v,c)=>{
+      if(v){
+        board[piece.y+r][piece.x+c]=piece.color;
+      }
+    });
+  });
+}
+
+function clearLines(){
+  let cleared = 0;
+
+  for(let r=ROWS-1;r>=0;r--){
+    if(board[r].every(v=>v)){
+      board.splice(r,1);
+      board.unshift(Array(COLS).fill(0));
+      cleared++;
+      r++;
+    }
+  }
+
+  score += [0,100,300,500,800][cleared] || 0;
+  document.getElementById("score").innerText = score;
+}
+
+function spawn(){
+  piece = nextPiece;
+  nextPiece = randomPiece();
+
+  if(!valid(piece.shape,piece.x,piece.y)){
+    alert("GAME OVER");
+    location.reload();
+  }
+
+  drawNext();
+}
+
+function ghostY(){
+  let y = piece.y;
+  while(valid(piece.shape,piece.x,y+1)) y++;
+  return y;
+}
+
+function drawCell(context,x,y,color,a=1){
+  context.globalAlpha = a;
+  context.fillStyle = color;
+  context.fillRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2);
+  context.globalAlpha = 1;
+}
+
+function draw(){
+  ctx.fillStyle="#07090d";
+  ctx.fillRect(0,0,boardCanvas.width,boardCanvas.height);
+
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if(board[r][c]){
+        drawCell(ctx,c,r,board[r][c]);
+      }
+    }
+  }
+
+  const gy = ghostY();
+
+  piece.shape.forEach((row,r)=>{
+    row.forEach((v,c)=>{
+      if(v){
+        drawCell(ctx,piece.x+c,gy+r,piece.color,.2);
+      }
+    });
+  });
+
+  piece.shape.forEach((row,r)=>{
+    row.forEach((v,c)=>{
+      if(v){
+        drawCell(ctx,piece.x+c,piece.y+r,piece.color);
+      }
+    });
+  });
+}
+
+function drawNext(){
+  nextCtx.fillStyle="#07090d";
+  nextCtx.fillRect(0,0,nextCanvas.width,nextCanvas.height);
+
+  nextPiece.shape.forEach((row,r)=>{
+    row.forEach((v,c)=>{
+      if(v){
+        drawCell(nextCtx,c+1,r+1,nextPiece.color);
+      }
+    });
+  });
+}
+
+function tick(){
+  if(!active) return;
+
+  if(valid(piece.shape,piece.x,piece.y+1)){
+    piece.y++;
+  }else{
+    merge();
+    clearLines();
+    spawn();
+  }
+
+  draw();
+  sendState();
+}
+
+function beginTurn(){
+  active = playerIndex === currentActive;
+
+  document.getElementById("turn").innerText =
+    active ? "YOUR TURN" : "WATCHING";
+
+  let remaining = 60;
+
+  document.getElementById("timer").innerText = remaining;
+
+  clearInterval(timerLoop);
+
+  timerLoop = setInterval(()=>{
+    remaining--;
+
+    document.getElementById("timer").innerText = remaining;
+
+    if(remaining <= 0){
+      clearInterval(timerLoop);
+
+      currentActive = currentActive === 0 ? 1 : 0;
+
+      ws.send(JSON.stringify({
+        type:"switch",
+        activePlayer:currentActive
+      }));
+    }
+
+  },1000);
+}
+
+function createRoom(){
+  connect();
+  ws.onopen = ()=>{
+    ws.send(JSON.stringify({type:"create"}));
+  };
+}
+
+function joinRoom(){
+  const code = document.getElementById("roomInput").value.trim();
+
+  connect();
+
+  ws.onopen = ()=>{
+    ws.send(JSON.stringify({
+      type:"join",
+      code
+    }));
+  };
+}
+
+function connect(){
+  ws = new WebSocket(`ws://${location.hostname}:${PORT}`);
+
+  ws.onmessage = e=>{
+    const msg = JSON.parse(e.data);
+
+    if(msg.type==="created"){
+      playerIndex = 0;
+      document.getElementById("roomCode").innerText = msg.code;
+    }
+
+    if(msg.type==="joined"){
+      playerIndex = 1;
+      document.getElementById("roomCode").innerText = msg.code;
+    }
+
+    if(msg.type==="ready"){
+      startGame();
+    }
+
+    if(msg.type==="state"){
+      board = msg.state.board;
+      piece = msg.state.piece;
+      nextPiece = msg.state.nextPiece;
+      score = msg.state.score;
+
+      document.getElementById("score").innerText = score;
+
+      draw();
+      drawNext();
+    }
+
+    if(msg.type==="switch"){
+      currentActive = msg.activePlayer;
+      beginTurn();
+    }
+  };
+}
+
+function sendState(){
+  if(playerIndex !== currentActive) return;
+
+  ws.send(JSON.stringify({
+    type:"state",
+    state:{
+      board,
+      piece,
+      nextPiece,
+      score
+    }
+  }));
+}
+
+function startGame(){
+  document.getElementById("lobby").style.display = "none";
+  document.getElementById("game").style.display = "flex";
+
+  if(playerIndex === 0){
+    board = newBoard();
+    nextPiece = randomPiece();
+    spawn();
+  }
+
+  beginTurn();
+
+  clearInterval(gameLoop);
+  gameLoop = setInterval(tick,550);
+}
+
+function action(a){
+  if(!active) return;
+
+  if(a==="left" && valid(piece.shape,piece.x-1,piece.y)) piece.x--;
+  if(a==="right" && valid(piece.shape,piece.x+1,piece.y)) piece.x++;
+  if(a==="down" && valid(piece.shape,piece.x,piece.y+1)) piece.y++;
+
+  if(a==="rotate"){
+    const rot = rotate(piece.shape);
+
+    if(valid(rot,piece.x,piece.y)){
+      piece.shape = rot;
+    }
+  }
+
+  if(a==="drop"){
+    while(valid(piece.shape,piece.x,piece.y+1)){
+      piece.y++;
+    }
+    tick();
+  }
+
+  draw();
+  sendState();
+}
+
+function press(a){
+  action(a);
+}
+
+document.addEventListener("keydown",e=>{
+  const map = {
+    ArrowLeft:"left",
+    ArrowRight:"right",
+    ArrowDown:"down",
+    ArrowUp:"rotate",
+    " ":"drop"
+  };
+
+  if(map[e.key]){
+    e.preventDefault();
+    action(map[e.key]);
+  }
+});
+</script>
+
+</body>
+</html>

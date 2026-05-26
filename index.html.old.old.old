@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relay Tetris</title>
+<style>
+body{
+background:#0b0f14;
+color:white;
+font-family:Arial;
+display:flex;
+justify-content:center;
+padding:20px;
+}
+#wrap{
+width:100%;
+max-width:420px;
+}
+.card{
+background:#151b22;
+padding:16px;
+border-radius:12px;
+margin-bottom:12px;
+}
+button,input{
+width:100%;
+padding:14px;
+border:none;
+border-radius:10px;
+margin-top:10px;
+font-size:18px;
+}
+button{
+background:#00ffd0;
+color:black;
+font-weight:bold;
+}
+input{
+background:#0d1117;
+color:white;
+}
+#game{
+display:none;
+}
+canvas{
+border:2px solid #00ffd0;
+image-rendering:pixelated;
+}
+#roomInfo{
+margin-top:10px;
+color:#00ffd0;
+font-size:20px;
+text-align:center;
+}
+</style>
+</head>
+<body>
+
+<div id="wrap">
+
+<div id="lobby">
+
+<div class="card">
+<h1>Relay Tetris</h1>
+<p>Shared board · alternating turns</p>
+</div>
+
+<div class="card">
+<button onclick="createRoom()">CREATE ROOM</button>
+<div id="roomInfo"></div>
+</div>
+
+<div class="card">
+<input id="joinCode" maxlength="4" placeholder="ROOM CODE">
+<button onclick="joinRoom()">JOIN ROOM</button>
+</div>
+
+</div>
+
+<div id="game">
+<canvas id="board"></canvas>
+</div>
+
+</div>
+
+<script>
+const PORT = 3000;
+let ws;
+
+function connect(){
+  ws = new WebSocket(`ws://${location.hostname}:${PORT}`);
+
+  ws.onerror = ()=>{
+    alert("Server not running");
+  };
+
+  ws.onmessage = (e)=>{
+    const msg = JSON.parse(e.data);
+
+    if(msg.type === "created"){
+      document.getElementById("roomInfo").innerText =
+        "ROOM CODE: " + msg.code;
+    }
+
+    if(msg.type === "ready"){
+      startGame();
+    }
+  };
+}
+
+function createRoom(){
+  connect();
+
+  ws.addEventListener("open", ()=>{
+    ws.send(JSON.stringify({
+      type:"create"
+    }));
+  }, {once:true});
+}
+
+function joinRoom(){
+  const code = document.getElementById("joinCode")
+    .value
+    .trim()
+    .toUpperCase();
+
+  connect();
+
+  ws.addEventListener("open", ()=>{
+    ws.send(JSON.stringify({
+      type:"join",
+      code
+    }));
+  }, {once:true});
+}
+
+function startGame(){
+  document.getElementById("lobby").style.display = "none";
+  document.getElementById("game").style.display = "block";
+
+  const canvas = document.getElementById("board");
+  canvas.width = 200;
+  canvas.height = 400;
+
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#00ffd0";
+  ctx.fillRect(50,50,100,100);
+}
+</script>
+
+</body>
+</html>

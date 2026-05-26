@@ -1,0 +1,175 @@
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { WebSocketServer } = require("ws");
+
+const PORT = 3000;
+
+const server = http.createServer((req,res)=>{
+
+  let file = "index.html";
+
+  if(req.url !== "/" && req.url !== "/index.html"){
+    res.writeHead(404);
+    return res.end("404");
+  }
+
+  fs.readFile(path.join(__dirname,file),(err,data)=>{
+    if(err){
+      res.writeHead(500);
+      return res.end("Missing index.html");
+    }
+
+    res.writeHead(200,{
+      "Content-Type":"text/html"
+    });
+
+    res.end(data);
+  });
+
+});
+
+const wss = new WebSocketServer({server});
+
+const rooms = {};
+
+function code(){
+  return Math.random()
+    .toString(36)
+    .substring(2,6)
+    .toUpperCase();
+}
+
+function send(ws,data){
+  if(ws.readyState === 1){
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function broadcast(room,data){
+  room.players.forEach(p=>send(p,data));
+}
+
+wss.on("connection",(ws)=>{
+
+  ws.room = null;
+  ws.player = null;
+
+  ws.on("message",(raw)=>{
+
+    let msg;
+
+    try{
+      msg = JSON.parse(raw);
+    }catch{
+      return;
+    }
+
+    if(msg.type === "create"){
+
+      const roomCode = code();
+
+      rooms[roomCode] = {
+        players:[ws]
+      };
+
+      ws.room = roomCode;
+      ws.player = 0;
+
+      send(ws,{
+        type:"created",
+        code:roomCode
+      });
+
+    }
+
+    else if(msg.type === "join"){
+
+      const room = rooms[msg.code];
+
+      if(!room){
+        return send(ws,{
+          type:"error",
+          message:"Room not found"
+        });
+      }
+
+      if(room.players.length >= 2){
+        return send(ws,{
+          type:"error",
+          message:"Room full"
+        });
+      }
+
+      room.players.push(ws);
+
+      ws.room = msg.code;
+      ws.player = 1;
+
+      send(ws,{
+        type:"joined",
+        code:msg.code
+      });
+
+      broadcast(room,{
+        type:"ready"
+      });
+
+    }
+
+    else if(msg.type === "state"){
+
+      const room = rooms[ws.room];
+      if(!room) return;
+
+      room.players.forEach((p,i)=>{
+        if(i !== ws.player){
+          send(p,{
+            type:"state",
+            state:msg.state
+          });
+        }
+      });
+
+    }
+
+    else if(msg.type === "switch"){
+
+      const room = rooms[ws.room];
+      if(!room) return;
+
+      broadcast(room,{
+        type:"switch",
+        activePlayer:msg.activePlayer
+      });
+
+    }
+
+  });
+
+  ws.on("close",()=>{
+
+    const room = rooms[ws.room];
+
+    if(!room) return;
+
+    room.players = room.players.filter(p=>p!==ws);
+
+    if(room.players.length === 0){
+      delete rooms[ws.room];
+    }else{
+      broadcast(room,{
+        type:"error",
+        message:"Other player disconnected"
+      });
+    }
+
+  });
+
+});
+
+server.listen(PORT,"0.0.0.0",()=>{
+  console.log("\\nRelay Tetris running");
+  console.log("\\nOpen:");
+  console.log("http://YOUR_IP:3000\\n");
+});

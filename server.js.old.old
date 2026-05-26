@@ -1,0 +1,108 @@
+const http = require("http");
+const fs = require("fs");
+const { WebSocketServer } = require("ws");
+
+const PORT = 3000;
+
+const server = http.createServer((req,res)=>{
+  fs.readFile("index.html",(err,data)=>{
+    res.writeHead(200,{"Content-Type":"text/html"});
+    res.end(data);
+  });
+});
+
+const wss = new WebSocketServer({server});
+
+const rooms = {};
+
+function code(){
+  return Math.random().toString(36).substring(2,6).toUpperCase();
+}
+
+function send(ws,data){
+  if(ws.readyState === 1){
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function broadcast(room,data){
+  room.players.forEach(p=>send(p,data));
+}
+
+wss.on("connection",(ws)=>{
+
+  ws.on("message",(raw)=>{
+
+    const msg = JSON.parse(raw);
+
+    if(msg.type === "create"){
+
+      const roomCode = code();
+
+      rooms[roomCode] = {
+        players:[ws]
+      };
+
+      ws.room = roomCode;
+      ws.player = 0;
+
+      send(ws,{
+        type:"created",
+        code:roomCode
+      });
+    }
+
+    else if(msg.type === "join"){
+
+      const room = rooms[msg.code];
+
+      if(!room){
+        return;
+      }
+
+      room.players.push(ws);
+
+      ws.room = msg.code;
+      ws.player = 1;
+
+      send(ws,{
+        type:"joined",
+        code:msg.code
+      });
+
+      broadcast(room,{
+        type:"ready"
+      });
+    }
+
+    else if(msg.type === "state"){
+
+      const room = rooms[ws.room];
+      if(!room) return;
+
+      room.players.forEach((p,i)=>{
+        if(i !== ws.player){
+          send(p,{
+            type:"state",
+            state:msg.state
+          });
+        }
+      });
+    }
+
+    else if(msg.type === "switch"){
+
+      const room = rooms[ws.room];
+      if(!room) return;
+
+      broadcast(room,{
+        type:"switch",
+        activePlayer:msg.activePlayer
+      });
+    }
+  });
+});
+
+server.listen(PORT,"0.0.0.0",()=>{
+  console.log("Relay Tetris running");
+});

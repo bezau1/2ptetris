@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Relay Tetris</title>
+<style>
+body{
+  margin:0;
+  background:#0b0f14;
+  color:white;
+  font-family:Arial,sans-serif;
+  display:flex;
+  justify-content:center;
+}
+#app{
+  width:100%;
+  max-width:420px;
+  padding:12px;
+}
+.card{
+  background:#151b22;
+  border-radius:12px;
+  padding:14px;
+  margin-bottom:10px;
+}
+button,input{
+  width:100%;
+  padding:14px;
+  border:none;
+  border-radius:10px;
+  margin-top:10px;
+  font-size:18px;
+}
+button{
+  background:#00ffd0;
+  color:black;
+  font-weight:bold;
+}
+input{
+  background:#0d1117;
+  color:white;
+  text-align:center;
+}
+#game{
+  display:none;
+}
+#top{
+  display:flex;
+  justify-content:space-between;
+  margin-bottom:10px;
+}
+canvas{
+  border:2px solid #00ffd0;
+  image-rendering:pixelated;
+}
+#controls{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:8px;
+  margin-top:10px;
+}
+.ctrl{
+  background:#151b22;
+  color:white;
+  text-align:center;
+  padding:18px;
+  border-radius:10px;
+  font-size:24px;
+}
+.drop{
+  grid-column:1/-1;
+}
+#turn{
+  margin-top:10px;
+  text-align:center;
+  font-size:20px;
+  color:#00ffd0;
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+<div id="lobby">
+  <div class="card">
+    <h1>Relay Tetris</h1>
+    <p>Shared board • alternating turns</p>
+  </div>
+
+  <div class="card">
+    <button onclick="createRoom()">CREATE ROOM</button>
+    <div id="roomText"></div>
+  </div>
+
+  <div class="card">
+    <input id="joinCode" maxlength="4" placeholder="ROOM">
+    <button onclick="joinRoom()">JOIN ROOM</button>
+  </div>
+</div>
+
+<div id="game">
+
+  <div id="top">
+    <div>Score: <span id="score">0</span></div>
+    <div>Time: <span id="timer">60</span></div>
+  </div>
+
+  <canvas id="board"></canvas>
+
+  <div id="turn">YOUR TURN</div>
+
+  <div id="controls">
+    <div class="ctrl" ontouchstart="press('left')">◀</div>
+    <div class="ctrl" ontouchstart="press('rotate')">↻</div>
+    <div class="ctrl" ontouchstart="press('right')">▶</div>
+    <div class="ctrl" ontouchstart="press('down')">▼</div>
+    <div class="ctrl drop" ontouchstart="press('drop')">DROP</div>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+const PORT = 3000;
+
+let ws;
+let playerIndex = 0;
+let currentActive = 0;
+let timerLoop;
+
+const COLS = 10;
+const ROWS = 20;
+const SIZE = 28;
+
+const canvas = document.getElementById("board");
+canvas.width = COLS * SIZE;
+canvas.height = ROWS * SIZE;
+
+const ctx = canvas.getContext("2d");
+
+const COLORS = {
+I:"#00ffff",
+O:"#ffff00",
+T:"#bb00ff",
+S:"#00ff66",
+Z:"#ff0044",
+J:"#3366ff",
+L:"#ff9900"
+};
+
+const PIECES = {
+I:[[1,1,1,1]],
+O:[[1,1],[1,1]],
+T:[[0,1,0],[1,1,1]],
+S:[[0,1,1],[1,1,0]],
+Z:[[1,1,0],[0,1,1]],
+J:[[1,0,0],[1,1,1]],
+L:[[0,0,1],[1,1,1]]
+};
+
+const TYPES = Object.keys(PIECES);
+
+let board = [];
+let piece;
+let nextPiece;
+let score = 0;
+let active = false;
+
+function newBoard(){
+  return Array.from({length:ROWS},()=>Array(COLS).fill(0));
+}
+
+function randomPiece(){
+  const type = TYPES[Math.floor(Math.random()*TYPES.length)];
+
+  return {
+    type,
+    shape: PIECES[type].map(r=>[...r]),
+    x:3,
+    y:0,
+    color:COLORS[type]
+  };
+}
+
+function rotate(shape){
+  return shape[0].map((_,i)=>shape.map(r=>r[i]).reverse());
+}
+
+function valid(shape,x,y){
+  for(let r=0;r<shape.length;r++){
+    for(let c=0;c<shape[r].length;c++){
+      if(shape[r][c]){
+        const nx = x + c;
+        const ny = y + r;
+
+        if(nx < 0 || nx >= COLS || ny >= ROWS) return false;
+        if(ny >= 0 && board[ny][nx]) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function draw(){
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if(board[r][c]){
+        ctx.fillStyle = board[r][c];
+        ctx.fillRect(c*SIZE,r*SIZE,SIZE-1,SIZE-1);
+      }
+    }
+  }
+
+  if(piece){
+    piece.shape.forEach((row,r)=>{
+      row.forEach((v,c)=>{
+        if(v){
+          ctx.fillStyle = piece.color;
+          ctx.fillRect((piece.x+c)*SIZE,(piece.y+r)*SIZE,SIZE-1,SIZE-1);
+        }
+      });
+    });
+  }
+}
+
+function merge(){
+  piece.shape.forEach((row,r)=>{
+    row.forEach((v,c)=>{
+      if(v){
+        board[piece.y+r][piece.x+c] = piece.color;
+      }
+    });
+  });
+}
+
+function clearLines(){
+  for(let r=ROWS-1;r>=0;r--){
+    if(board[r].every(v=>v)){
+      board.splice(r,1);
+      board.unshift(Array(COLS).fill(0));
+      score += 100;
+      document.getElementById("score").innerText = score;
+      r++;
+    }
+  }
+}
+
+function spawn(){
+  piece = nextPiece;
+  nextPiece = randomPiece();
+
+  if(!valid(piece.shape,piece.x,piece.y)){
+    alert("GAME OVER");
+    location.reload();
+  }
+}
+
+function tick(){
+  if(!active) return;
+
+  if(valid(piece.shape,piece.x,piece.y+1)){
+    piece.y++;
+  }else{
+    merge();
+    clearLines();
+    spawn();
+  }
+
+  draw();
+  sendState();
+}
+
+function sendState(){
+  if(playerIndex !== currentActive) return;
+
+  ws.send(JSON.stringify({
+    type:"state",
+    state:{board,piece,nextPiece,score}
+  }));
+}
+
+function startGame(){
+  document.getElementById("lobby").style.display = "none";
+  document.getElementById("game").style.display = "block";
+
+  if(playerIndex === 0){
+    board = newBoard();
+    nextPiece = randomPiece();
+    spawn();
+  }
+
+  beginTurn();
+
+  setInterval(tick,500);
+}
+
+function beginTurn(){
+
+  clearInterval(timerLoop);
+
+  active = playerIndex === currentActive;
+
+  document.getElementById("turn").innerText =
+    active ? "YOUR TURN" : "WAIT";
+
+  let time = 60;
+
+  document.getElementById("timer").innerText = time;
+
+  timerLoop = setInterval(()=>{
+    time--;
+
+    document.getElementById("timer").innerText = time;
+
+    if(time <= 0){
+
+      clearInterval(timerLoop);
+
+      if(playerIndex === currentActive){
+
+        currentActive = currentActive === 0 ? 1 : 0;
+
+        ws.send(JSON.stringify({
+          type:"switch",
+          activePlayer:currentActive
+        }));
+      }
+    }
+
+  },1000);
+}
+
+function action(a){
+  if(!active) return;
+
+  if(a==="left" && valid(piece.shape,piece.x-1,piece.y)) piece.x--;
+  if(a==="right" && valid(piece.shape,piece.x+1,piece.y)) piece.x++;
+  if(a==="down" && valid(piece.shape,piece.x,piece.y+1)) piece.y++;
+
+  if(a==="rotate"){
+    const rot = rotate(piece.shape);
+
+    if(valid(rot,piece.x,piece.y)){
+      piece.shape = rot;
+    }
+  }
+
+  if(a==="drop"){
+    while(valid(piece.shape,piece.x,piece.y+1)){
+      piece.y++;
+    }
+  }
+
+  draw();
+  sendState();
+}
+
+function press(a){
+  action(a);
+}
+
+document.addEventListener("keydown",e=>{
+  const map = {
+    ArrowLeft:"left",
+    ArrowRight:"right",
+    ArrowDown:"down",
+    ArrowUp:"rotate",
+    " ":"drop"
+  };
+
+  if(map[e.key]){
+    e.preventDefault();
+    action(map[e.key]);
+  }
+});
+
+function connect(){
+  ws = new WebSocket(`ws://${location.hostname}:${PORT}`);
+
+  ws.onmessage = e=>{
+    const msg = JSON.parse(e.data);
+
+    if(msg.type === "created"){
+      playerIndex = 0;
+      document.getElementById("roomText").innerText =
+        "ROOM: " + msg.code;
+    }
+
+    if(msg.type === "joined"){
+      playerIndex = 1;
+    }
+
+    if(msg.type === "ready"){
+      startGame();
+    }
+
+    if(msg.type === "state"){
+      board = msg.state.board;
+      piece = msg.state.piece;
+      nextPiece = msg.state.nextPiece;
+      score = msg.state.score;
+
+      document.getElementById("score").innerText = score;
+
+      draw();
+    }
+
+    if(msg.type === "switch"){
+      currentActive = msg.activePlayer;
+      beginTurn();
+    }
+  };
+}
+
+function createRoom(){
+  connect();
+
+  ws.addEventListener("open",()=>{
+    ws.send(JSON.stringify({type:"create"}));
+  },{once:true});
+}
+
+function joinRoom(){
+  const code = document.getElementById("joinCode")
+    .value
+    .trim()
+    .toUpperCase();
+
+  connect();
+
+  ws.addEventListener("open",()=>{
+    ws.send(JSON.stringify({
+      type:"join",
+      code
+    }));
+  },{once:true});
+}
+</script>
+
+</body>
+</html>
